@@ -5,13 +5,22 @@ Port to Python by osbertngok
 """
 
 import typing
+import enum
 import music21
+
+from ..i18n import Statement, Language, _
+from ..functions import different_name
+
+
+class OverflowState(enum.Enum):
+    NoOverflow = 0
+    Single = 1
+    Total = 2
 
 
 class CNChord:
     """
     Implementation of Chord based on
-        chord.h / chord.cpp and
         chorddata.h / chorddata.cpp
     of original C++ implementation
 
@@ -23,6 +32,35 @@ class CNChord:
 
     _chord: music21.chord.Chord
     _voice_leading_max: int  # Range of Movement, refers to Chord.vlmax
+
+    t_size: int  # n; size of notes
+    s_size: int  # m; size of note_set
+    tension: float  # t
+    thickness: float  # h
+    root: int  # r
+    g_center: int  # g
+
+    span: int  # s
+    sspan: int  # ss
+    similarity: int  # x
+
+    chroma_old: float  # kk
+    prev_chroma_old: float
+    chroma: float  # k
+    Q_indicator: float  # Q
+    common_note: int  # c
+    sv: int  # sv, Σvec
+
+    overflow_state: OverflowState
+
+    notes: typing.List[int]  # always regarded as a sorted (L -> H) vector
+    hide_octave: bool
+    name: str  # name of each note in the chord
+    name_with_octave: str  # name and octave of each note in the chord
+
+    vec: typing.List[int]  # v
+    self_diff: typing.List[int]  # d
+    count_vec: typing.List[int]  # vec
 
     def __init__(self):
         self._chord = music21.chord.Chord()
@@ -67,14 +105,14 @@ class CNChord:
     @property
     def voice_leading_max(self) -> int:
         """
-        See also
-            void _set_vl_max(const int&);
-        in original C++ Implementation
+         See also
+             void _set_vl_max(const int&);
+         in original C++ Implementation
         :return:
         """
         return self.voice_leading_max
 
-    def find_vec(self, in_analyser, in_substituion) -> "CNChord":
+    def find_vec(self, in_analyser, in_substitution) -> "CNChord":
         """
         interface of '_find_vec'
 
@@ -91,7 +129,140 @@ class CNChord:
         In Python there is no point to follow this.
 
         :param in_analyser:
-        :param in_substituion:
+        :param in_substitution:
         :return:
         """
+        raise NotImplementedError()
+
+    def inverse_param(self):
+        # Swap
+        self.prev_chroma_old, self.chroma_old = self.chroma_old, self.prev_chroma_old
+        self.chroma *= -1
+        self.Q_indicator *= -1
+
+    def __repr__basic__(self, language: Language) -> str:
+        output_str = ""
+        output_str += f"t = {self.tension}, s = {self.span}, "
+        output_str += f"vec = {self.count_vec}\n"
+        output_str += f"d = {self.self_diff}\n"
+        output_str += f"n = {self.s_size}, "
+        output_str += f"m = {self.t_size}, "
+        output_str += f"n/m = {self.s_size * 1.0 / self.t_size}, "
+        output_str += f"h = {self.thickness}, "
+        output_str += f"g = {self.g_center}%, "
+        output_str += f"{_(Statement.ROOT, language)}: "
+        output_str += f" (r = {self.root})\n\n"
+        return output_str
+
+    def __repr__advanced__(self) -> str:
+        output_str = ""
+        output_str += f"k = {self.chroma}, "
+        output_str += f"kk = {self.chroma_old - self.prev_chroma_old}, "
+        output_str += f"c = {self.common_note}, "
+        output_str += f"ss = {self.sspan}, "
+        output_str += f"sv = {self.sv}, "
+        output_str += f"v = {self.vec}\n"
+        return output_str
+
+    def __repr__diff__(self, chord: "CNChord", language: Language) -> str:
+        output_str = ""
+        output_str += f"A = {chord.Q_indicator}, "
+        output_str += f"x = {chord.similarity}, "
+        output_str += f"dr = {chord.root - self.root}, "
+        output_str += f"dn = {chord.s_size * 1.0 / self.s_size}, "
+        output_str += f"dt = {chord.thickness - self.thickness}, "
+        output_str += f"ds = {chord.span - self.span}%, "
+        output_str += f"dg = {chord.g_center - self.g_center}\n\n"
+        return output_str
+
+    def __repr__overflowstate(self) -> str:
+        if self.overflow_state == OverflowState.Single:
+            return "*\n"
+        elif self.overflow_state == OverflowState.Total:
+            return "**\n"
+        elif self.overflow_state == OverflowState.NoOverflow:
+            return "\n"
+        return ""
+
+    def print_initial(self, language: Language):
+        """
+        c++: ChordData::printInitial(Language language)
+        :param language:
+        :return:
+        """
+        output_str = ""
+        output_str += f"{_(Statement.INITIAL_CHORD, language)}: {self.notes}  "
+        output_str += f"({self.name}\n"
+        output_str += self.__repr__basic__(language)
+
+        print(output_str)
+
+    def print(self, chord: "CNChord", language: Language):
+        output_str = ""
+        output_str += f"-> {chord.notes} ,\n"
+        output_str += f"( {chord.name} )"
+
+        output_str += chord.__repr__overflowstate()
+
+        output_str += chord.__repr__advanced__()
+
+        output_str += chord.__repr__basic__(language)
+
+        output_str += self.__repr__diff__(chord, language)
+
+        print(output_str)
+
+    def print_analysis(
+        self,
+        antechord: "CNChord",
+        postchord: "CNChord",
+        str_ante: str,
+        str_post: str,
+        language: Language,
+    ):
+        output_str = ""
+        if self.hide_octave:
+            output_str += f"({antechord.name}) -> ({postchord.name})"
+        else:
+            output_str += (
+                f"({antechord.name_with_octave}) -> ({postchord.name_with_octave})"
+            )
+
+        if postchord.overflow_state == OverflowState.Single:
+            output_str += "*\n"
+        elif postchord.overflow_state == OverflowState.Total:
+            output_str += "**\n"
+        elif postchord.overflow_state == OverflowState.NoOverflow:
+            output_str += "\n"
+
+        b = different_name(str_ante, antechord.name) or different_name(
+            str_post, postchord.name
+        )
+        if b:
+            output_str += f"( ({str_ante}) -> ({str_post}) )\n"
+
+        output_str += f"{antechord.notes} -> {postchord.notes} \n\n"
+
+        output_str += f"{_(Statement.ANTE_CHORD)}:\n"
+        output_str += antechord.__repr__basic__(language)
+
+        output_str += f"{_(Statement.POST_CHORD)}:\n"
+        output_str += postchord.__repr__basic__(language)
+
+        output_str += f"{_(Statement.CHORD_PROGRESSION)}:\n"
+
+        output_str += postchord.__repr__advanced__()
+        output_str += antechord.__repr__diff__(postchord, language)
+
+        print(output_str)
+
+    def print_substitution(
+        self,
+        param: str,
+        print_ante: bool,
+        print_post: bool,
+        antechord: "CNChord",
+        postchord: "CNChord",
+        language: Language,
+    ):
         raise NotImplementedError()
