@@ -5,6 +5,8 @@ Port to Python by osbertngok
 """
 import typing
 
+from datetime import datetime
+
 import enum
 from . import i18n
 from .models.cnchord import CNChord
@@ -51,7 +53,7 @@ class IntervalData(object):
 class ChordProgressionGenerator(object):
     """
     Implementation of Chord based on
-        chord.h / chord.cpp
+        chord.h / chord.cpp / analyser.cpp
     of original C++ implementation
     """
 
@@ -360,3 +362,7 @@ class ChordProgressionGenerator(object):
 
     def choose_initial(self):
         raise NotImplementedError()
+
+    def substitute(self):
+        begin_sub = datetime.utcnow()
+
