@@ -8,6 +8,7 @@ import typing
 import enum
 import music21
 
+from .cnchordfeature import CNChordFeature, CNChordBigramFeature
 from ..i18n import Statement, Language, _
 from ..functions import different_name
 
@@ -16,6 +17,12 @@ class OverflowState(enum.Enum):
     NoOverflow = 0
     Single = 1
     Total = 2
+
+
+class OutputMode(enum.Enum):
+    Both = 0
+    MidiOnly = 1
+    TextOnly = 2
 
 
 class CNChord:
@@ -30,10 +37,12 @@ class CNChord:
            generation logics are separated into a standalone module.
     """
 
+    """
+    Deliberately not using inheritance here but for no obvious reason
+    """
     _chord: music21.chord.Chord
     _voice_leading_max: int  # Range of Movement, refers to Chord.vlmax
 
-    t_size: int  # n; size of notes
     s_size: int  # m; size of note_set
     tension: float  # t
     thickness: float  # h
@@ -44,8 +53,8 @@ class CNChord:
     sspan: int  # ss
     similarity: int  # x
 
-    chroma_old: float  # kk
-    prev_chroma_old: float
+    _chroma_old: float  # kk
+
     chroma: float  # k
     Q_indicator: float  # Q
     common_note: int  # c
@@ -53,7 +62,6 @@ class CNChord:
 
     overflow_state: OverflowState
 
-    notes: typing.List[int]  # always regarded as a sorted (L -> H) vector
     hide_octave: bool
     name: str  # name of each note in the chord
     name_with_octave: str  # name and octave of each note in the chord
@@ -62,20 +70,37 @@ class CNChord:
     self_diff: typing.List[int]  # d
     count_vec: typing.List[int]  # vec
 
+    """
+    This is to replace prev_chroma_old
+    """
+    ref_chord: typing.Optional["CNChord"]  # reference chord to calculate chroma_old
+
+    """
+    We want to make evaluation lazy. Evaluation won't be triggered
+    until property is accessed.
+    """
+    _dirty: bool
+
     def __init__(self):
         self._chord = music21.chord.Chord()
 
     @staticmethod
-    def from_notes(notes: typing.List[int], chroma_old: float) -> "CNChord":
+    def from_notes(
+        notes: typing.List[int], ref_chord: typing.Optional["CNChord"] = None
+    ) -> "CNChord":
         """
         See also
             Chord(const vector<int>& _notes, double _chroma_old = 0.0);
         in original C++ implementation
         :param notes:
-        :param chroma_old:
+        :param prev_chroma_old:
         :return:
         """
-        raise NotImplementedError()
+        ret = CNChord()
+        ret._chord = music21.chord.Chord(notes)
+        if ref_chord is not None:
+            ret.ref_chord = ref_chord
+        return ret
 
     def copy(self) -> "CNChord":
         """
@@ -84,7 +109,10 @@ class CNChord:
         in original C++ Implementation
         :return:
         """
-        raise NotImplementedError()
+        ret = CNChord()
+        ret._chord = music21.chord.Chord(self._chord.pitches)
+        ret.ref_chord = self.ref_chord
+        return ret
 
     @property
     def set_id(self) -> int:
@@ -128,17 +156,18 @@ class CNChord:
 
         In Python there is no point to follow this.
 
-        :param in_analyser:
-        :param in_substitution:
         :return:
         """
         raise NotImplementedError()
 
     def inverse_param(self):
+        """
         # Swap
         self.prev_chroma_old, self.chroma_old = self.chroma_old, self.prev_chroma_old
         self.chroma *= -1
         self.Q_indicator *= -1
+        """
+        raise NotImplementedError()
 
     def __repr__basic__(self, language: Language) -> str:
         output_str = ""
@@ -183,6 +212,39 @@ class CNChord:
         elif self.overflow_state == OverflowState.NoOverflow:
             return "\n"
         return ""
+
+    @property
+    def chroma_old(self) -> float:
+        return self._chroma_old
+
+    @property
+    def prev_chroma_old(self) -> float:
+        return self.ref_chord.chroma_old
+
+    @property
+    def notes(self) -> typing.List[int]:
+        """
+        always regarded as a sorted (L -> H) vector
+        TODO: materialize this so we do not need to call list comprehension and sorted function
+        :return:
+        """
+        ret = [p.midi for p in self._chord.pitches]
+        sorted(ret)
+        return ret
+
+    @property
+    def t_size(self) -> int:
+        """
+        n; size of notes
+        :return:
+        """
+        return len(self._chord.notes)
+
+    def materialize_chord_feature(self) -> CNChordFeature:
+        raise NotImplementedError()
+
+    def calculate_chord_bigram_feature(self) -> CNChordBigramFeature:
+        raise NotImplementedError()
 
     def print_initial(self, language: Language):
         """

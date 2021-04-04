@@ -154,3 +154,26 @@ def initialize_expansion_indexes() -> typing.List[
                     total_combinations - 1 - index
                 ] = new_item  # Reverse the order
     return ret_expansion_indexes
+
+
+def intersect(
+    A: typing.List[int], B: typing.List[int], regular: bool
+) -> typing.List[int]:
+    """
+    Gets the intersection of two vectors.
+    If 'regular' == false, the vectors will be sorted and duplicate elements of each vector will be deleted.
+    """
+    # Welcome to Python
+    return list(set.intersection(set(A), set(B)))
+
+
+def get_union(A: typing.List[int], B: typing.List[int]) -> typing.List[int]:
+    """
+    Gets the union of two vectors.
+    :param A:
+    :param B:
+    :return:
+    """
+    ret = list(set.union(set(A), set(B)))
+    sorted(ret)
+    return ret
